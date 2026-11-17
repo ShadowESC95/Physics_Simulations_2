@@ -19,17 +19,26 @@ Budget for one burst
   strongly galactic feedback smooths the intergalactic gas.
 * DM_host is log-normal in the host frame: ln DM_host ~ N(mu, sigma_host^2).
 * DM_gamma is the photon-mass term of frb_limit.dm_gamma. It is not random.
-* e is the error of the Milky Way subtraction (disc model plus halo),
-  Gaussian with width sigma_mw. Without it a burst whose dispersion is below
-  the Milky Way model (FRB 20220319D) would have zero likelihood.
+* e is the error of the Milky Way subtraction, Gaussian, with a width set for
+  each sightline: sigma^2 = sigma_halo^2 + (disc_fraction * DM_disc)^2. The
+  disc model is uncertain in proportion to what it predicts, so a burst seen
+  through the Galactic plane is known less well than one seen at high
+  latitude. Without e a burst whose dispersion is below the Milky Way model
+  (FRB 20220319D) would have zero likelihood.
 
 The likelihood of a burst is the convolution of the three random terms. It is
 computed on a uniform DM grid: each term is turned into exact cell
 probabilities (from its cumulative distribution), the three are convolved by
-FFT, and the result is read off at the burst's DM. Nuisance parameters F, mu,
-sigma_host and f_IGM are profiled out. A photon mass can only add dispersion,
-so the lower edges of the distributions are what constrain it; a Gaussian has
-no such edge.
+FFT, and the result is read off at the burst's DM. A photon mass can only add
+dispersion, so the lower edges of the distributions are what constrain it; a
+Gaussian has no such edge.
+
+Two ways of removing the nuisance parameters F, mu, sigma_host and f_IGM:
+`SkewFit` profiles them out (maximum likelihood at each mass), and `sample`
+integrates over them with Metropolis chains (flat priors).
+
+    python3 frb_likelihood.py             profile limits, about 5 min
+    python3 frb_likelihood.py --sample    also the marginalised limit, about 15 min more
 """
 from __future__ import annotations
 
@@ -107,7 +116,9 @@ def p_host(dm_host, mu, sigma):
 class SkewConfig:
     z_min: float = 0.01          # below this, peculiar velocities dominate z
     dm_halo: float = 50.0        # Milky Way halo, pc cm^-3 (assumed, as Macquart et al.)
-    sigma_mw: float = 30.0       # error of disc + halo subtraction (assumed)
+    sigma_halo: float = 15.0     # error of the halo value (assumed; covers 20-80)
+    disc_fraction: float = 0.2   # fractional error of the NE2001 disc DM (assumed)
+    sigma_mw: float | None = None    # if set: one error for every sightline instead
     f_range: tuple = (0.011, 0.5)        # F: prior range of Macquart et al.
     mu_range: tuple = (np.log(20.0), np.log(300.0))   # median host DM 20-300
     sigma_host_range: tuple = (0.2, 2.0)
@@ -131,22 +142,25 @@ class SkewFit:
         self.frbs = [r[0] for r in rows]
         self.z = np.array([r[3] for r in rows])
         self.excess = np.array([r[1] - r[2] for r in rows]) - cfg.dm_halo
+        disc = np.array([r[2] for r in rows])
+        self.sigma_mw = (np.full(len(rows), float(cfg.sigma_mw)) if cfg.sigma_mw is not None
+                         else np.sqrt(cfg.sigma_halo**2 + (cfg.disc_fraction * disc) ** 2))
         self.igm_unit = np.array([fl.dm_igm(z, 1.0) for z in self.z])
         self.gamma_unit = np.array([fl.dm_gamma(z, 1.0) for z in self.z])   # per eV^2
         d = cfg.step
-        need = 2 * (self.excess.max() / d + int(8 * cfg.sigma_mw / d) + 200)
+        self._neg = int(8 * self.sigma_mw.max() / d) + 2
+        need = 2 * (self.excess.max() / d + self._neg + 200)
         n = self._n = cfg.n_grid or int(2 ** np.ceil(np.log2(need)))
         # Cells kept below zero for the Milky Way error. The two positive terms
         # are kept on `m` cells each, so their sum plus the error never wraps
         # round the periodic FFT grid into the range that is read out.
-        self._neg = int(8 * cfg.sigma_mw / d) + 2
         self._m = m = n // 2 - self._neg
         if self.excess.max() >= m * d:
             raise ValueError("n_grid * step is too small for the largest DM in the sample")
         self._edges = d * np.arange(m + 1)                 # cell edges of the positive terms
         k = np.fft.fftfreq(n, 1.0 / n)                     # 0, 1, ..., -2, -1 (wrapped)
-        cdf = lambda x: 0.5 * (1.0 + erf(x / (np.sqrt(2.0) * cfg.sigma_mw)))
-        self._mw_hat = np.fft.rfft(cdf((k + 0.5) * d) - cdf((k - 0.5) * d))
+        cdf = lambda x: 0.5 * (1.0 + erf(x / (np.sqrt(2.0) * self.sigma_mw[:, None])))
+        self._mw_hat = np.fft.rfft(cdf((k[None, :] + 0.5) * d) - cdf((k[None, :] - 0.5) * d), axis=1)
         self._axis = d * (np.arange(-self._neg, m) + 1.0)  # DM at the centre of each sum cell
         self._bounds = [cfg.f_range, cfg.mu_range, cfg.sigma_host_range, cfg.f_igm_range]
         self._cache = {}
@@ -191,7 +205,7 @@ class SkewFit:
         """Density of DM_cosmic + DM_host/(1+z) + e on self._axis, one row per burst."""
         n = self._n
         hat = (np.fft.rfft(self._host_cells(mu, sigma_host), n=n, axis=1)
-               * np.fft.rfft(self._cosmic_cells(F, f_igm), n=n, axis=1) * self._mw_hat[None, :])
+               * np.fft.rfft(self._cosmic_cells(F, f_igm), n=n, axis=1) * self._mw_hat)
         pmf = np.fft.irfft(hat, n=n, axis=1)
         pmf = np.concatenate([pmf[:, n - self._neg:], pmf[:, :self._m]], axis=1)
         return np.maximum(pmf / self.cfg.step, FLOOR)
@@ -276,6 +290,103 @@ class SkewFit:
         return self.profile(m_ev)[0] - self.best_fit()[1]
 
 
+# --------------------------------------------------------------------------
+# Marginalised limit: sample the nuisance parameters
+# --------------------------------------------------------------------------
+def _mass_loglike(fit, theta, masses):
+    """ln L at every mass in `masses` for one set of nuisance parameters.
+
+    The mass only shifts the DM at which the density is read, so one density
+    evaluation serves the whole mass grid.
+    """
+    ln_d = np.log(fit.extragalactic_density(*theta))
+    x = fit.excess[:, None] - masses[None, :] ** 2 * fit.gamma_unit[:, None]
+    return np.sum([np.interp(x[i], fit._axis, ln_d[i]) for i in range(len(x))], axis=0)
+
+
+def _chain(args):
+    """One Metropolis chain over (F, mu, sigma_host, f_IGM), mass integrated out.
+
+    Priors are flat inside the configured ranges and flat in the mass on
+    [0, m_max]. The first `n_burn` steps use fixed step sizes and are used to
+    measure the covariance of the posterior; the remaining steps propose from
+    that covariance and are the ones returned.
+    """
+    rows, config, start, n_burn, n_keep, m_max, seed = args
+    fit = SkewFit(rows=rows, config=config)
+    rng = np.random.default_rng(seed)
+    masses = np.linspace(0.0, m_max, 61)
+    lo, hi = np.array(fit._bounds).T
+
+    def target(theta):
+        """ln of the mass-integrated likelihood, and p(m | theta) on the grid."""
+        if np.any(theta < lo) or np.any(theta > hi):
+            return -np.inf, None
+        ll = _mass_loglike(fit, theta, masses)
+        w = np.exp(ll - ll.max())
+        norm = np.sum(0.5 * (w[1:] + w[:-1])) * (masses[1] - masses[0])
+        return ll.max() + np.log(norm), w / norm
+
+    theta = np.clip(np.array(start, float), lo, hi)
+    lp, pm = target(theta)
+    step = np.diag(np.array([0.04, 0.10, 0.08, 0.05]) ** 2)
+    burn, kept, post, accepted = [], [], np.zeros_like(masses), 0
+    for it in range(n_burn + n_keep):
+        if it == n_burn:
+            step = 2.38**2 / 4.0 * np.cov(np.array(burn[n_burn // 4:]).T)
+        trial = rng.multivariate_normal(theta, step)
+        lp_new, pm_new = target(trial)
+        if np.log(rng.uniform()) < lp_new - lp:
+            theta, lp, pm = trial, lp_new, pm_new
+            accepted += it >= n_burn
+        if it < n_burn:
+            burn.append(theta.copy())
+        else:
+            kept.append(theta.copy())
+            post += pm
+    return np.array(kept), post / n_keep, accepted / n_keep
+
+
+def sample(rows=None, config=None, n_chains=4, n_burn=1500, n_keep=4000, m_max=3e-14,
+           seed=0, workers=None):
+    """Posterior of the photon mass, marginalised over the nuisance parameters.
+
+    Runs independent chains from scattered starting points. Returns a dict:
+        masses, posterior   p(m | data) on a grid, flat prior in m
+        limit68, limit95    upper credible limits (eV)
+        mean, std           posterior mean and width of F, mu, sigma_host, f_IGM
+        r_hat               Gelman-Rubin statistic of each parameter (near 1 if
+                            the chains agree)
+        acceptance          mean acceptance rate
+    """
+    from concurrent.futures import ProcessPoolExecutor
+    rows = fl.load() if rows is None else rows
+    config = config or SkewConfig()
+    centre = SkewFit(rows=rows, config=config).profile(0.0)[1]
+    rng = np.random.default_rng(seed)
+    spread = np.array([0.05, 0.15, 0.10, 0.05])
+    jobs = [(rows, config, centre + spread * rng.standard_normal(4), n_burn, n_keep,
+             m_max, seed + 1 + c) for c in range(n_chains)]
+    with ProcessPoolExecutor(max_workers=workers or n_chains) as pool:
+        out = list(pool.map(_chain, jobs))
+    chains = np.array([o[0] for o in out])                 # (chain, step, parameter)
+    post = np.mean([o[1] for o in out], axis=0)
+    masses = np.linspace(0.0, m_max, len(post))
+    cdf = np.concatenate([[0.0], np.cumsum(0.5 * (post[1:] + post[:-1]) * np.diff(masses))])
+    cdf /= cdf[-1]
+    within = chains.var(axis=1, ddof=1).mean(axis=0)
+    between = n_keep * chains.mean(axis=1).var(axis=0, ddof=1)
+    r_hat = np.sqrt(((n_keep - 1) / n_keep * within + between / n_keep) / within)
+    flat = chains.reshape(-1, 4)
+    return dict(masses=masses, posterior=post,
+                limit68=float(np.interp(0.68, cdf, masses)),
+                limit95=float(np.interp(0.95, cdf, masses)),
+                mean=flat.mean(axis=0), std=flat.std(axis=0), r_hat=r_hat,
+                acceptance=float(np.mean([o[2] for o in out])),
+                chain_limits95=[float(np.interp(0.95, np.cumsum(o[1]) / np.sum(o[1]), masses))
+                                for o in out])
+
+
 def report():
     fit = SkewFit()
     fixed = SkewFit(config=SkewConfig(f_igm_range=(0.84, 0.84)))
@@ -293,7 +404,6 @@ def report():
         f"  skewed distributions, f_IGM free              {fit.upper_limit(1.0):.2e}   {fit.upper_limit():.2e}",
         f"  skewed distributions, f_IGM = 0.84            {fixed.upper_limit(1.0):.2e}   {fixed.upper_limit():.2e}",
         f"  Gaussian scatter (frb_limit), f_IGM free      {gauss.upper_limit(1.0):.2e}   {gauss.upper_limit():.2e}",
-        f"  flat prior in m, skewed, f_IGM free: 68% {fit.credible_limit(0.68):.2e}, 95% {fit.credible_limit(0.95):.2e}",
         "",
         "Verdict on proposed masses (delta > 3.84 means excluded at 95%):",
     ]
@@ -302,5 +412,24 @@ def report():
     return "\n".join(lines)
 
 
+def sample_report(**kw):
+    out = sample(**kw)
+    F, mu, sh, fi = out["mean"]
+    dF, dmu, dsh, dfi = out["std"]
+    return "\n".join([
+        "Marginalised over the nuisance parameters (flat priors, flat in m):",
+        f"  m < {out['limit68']:.2e} eV (68%),  m < {out['limit95']:.2e} eV (95%)",
+        f"  F = {F:.2f} +- {dF:.2f}, median host DM = {np.exp(mu):.0f} pc cm^-3 "
+        f"(ln: +- {dmu:.2f}), sigma_host = {sh:.2f} +- {dsh:.2f}, f_IGM = {fi:.2f} +- {dfi:.2f}",
+        "  95% limit of each chain: " + ", ".join(f"{v:.2e}" for v in out["chain_limits95"]),
+        f"  Gelman-Rubin R: {np.max(out['r_hat']):.3f} (worst parameter); "
+        f"acceptance {out['acceptance']:.2f}",
+    ])
+
+
 if __name__ == "__main__":
+    import sys
     print(report())
+    if "--sample" in sys.argv:
+        print()
+        print(sample_report())

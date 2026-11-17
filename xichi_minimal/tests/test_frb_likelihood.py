@@ -70,7 +70,7 @@ def test_convolution_matches_a_direct_monte_carlo(fit):
     cdf = np.cumsum(lk.p_cosmic(d, 0.3 / np.sqrt(z)))
     cosmic = mean * np.interp(rng.uniform(0, 1, n), cdf / cdf[-1], d)
     host = np.exp(PARS[1] + PARS[2] * rng.standard_normal(n)) / (1 + z)
-    total = cosmic + host + fit.cfg.sigma_mw * rng.standard_normal(n)
+    total = cosmic + host + fit.sigma_mw[i] * rng.standard_normal(n)
     dens = fit.extragalactic_density(*PARS)[i]
     for lo, hi in ((150, 250), (250, 350), (350, 500), (500, 900)):
         sel = (fit._axis >= lo) & (fit._axis < hi)
@@ -123,3 +123,30 @@ def test_pipeline_detects_an_injected_mass():
     at_true = f.profile(m_true)[0]
     assert f.profile(0.0)[0] - at_true > 25                # m = 0 rejected
     assert f.profile(2.4e-14)[0] > at_true < f.profile(3.6e-14)[0]
+
+
+def test_milky_way_error_grows_with_the_disc_contribution(fit):
+    """A sightline through more of the Galactic disc is known less well."""
+    disc = np.array([r[2] for r in fl.load(z_min=fit.cfg.z_min)])
+    assert np.all(np.diff(fit.sigma_mw[np.argsort(disc)]) >= 0)
+    assert fit.sigma_mw.min() == pytest.approx(
+        np.hypot(fit.cfg.sigma_halo, fit.cfg.disc_fraction * disc.min()))
+    flat = lk.SkewFit(config=lk.SkewConfig(sigma_mw=30.0))
+    assert np.all(flat.sigma_mw == 30.0)
+
+
+def test_mass_grid_likelihood_equals_the_direct_one(fit):
+    masses = np.array([0.0, 4e-15, 1.2e-14])
+    ll = lk._mass_loglike(fit, PARS, masses)
+    for m, v in zip(masses, ll):
+        assert -2.0 * v == pytest.approx(fit.nll(m, *PARS), rel=1e-10)
+
+
+def test_sampler_gives_a_limit_consistent_with_the_profile(fit):
+    """Short chains: enough to check the machinery, not for quoting numbers."""
+    out = lk.sample(n_chains=2, n_burn=250, n_keep=400, seed=5)
+    post, m = out["posterior"], out["masses"]
+    assert np.sum(0.5 * (post[1:] + post[:-1]) * np.diff(m)) == pytest.approx(1.0, rel=1e-6)
+    assert post[0] > post[-1] * 1e3                      # mass zero favoured, 3e-14 excluded
+    assert 3e-15 < out["limit68"] < out["limit95"] < 1.5e-14
+    assert 0.05 < out["acceptance"] < 0.8
