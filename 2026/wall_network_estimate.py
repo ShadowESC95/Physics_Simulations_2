@@ -49,7 +49,7 @@ Stated assumptions
 5. Most of the mean conversion comes from near-grazing incidence (the angle
    average grows like ln(omega / m)), which is where the thick-wall formula is
    least secure.  Counting only angles below 80 degrees would lower the loss
-   about 15-fold in the default scenario.
+   about 17-fold in the default scenario.
 """
 import argparse
 import sys
@@ -58,6 +58,10 @@ import numpy as np
 HBAR_EV_S = 6.582119569e-16        # eV s
 C_M_S = 299792458.0                # m / s
 PARSEC_M = 3.0856775814913673e16   # m
+# 95% upper limit on a photon mass from fast radio burst dispersion
+# (../xichi_minimal/frb_likelihood.py).  Dispersion measures the mean of m^2
+# along the path, so it is compared with the rms mass of the two domains.
+FRB_MASS_LIMIT_EV = 9e-15
 
 
 def _trapezoid(y, x):
@@ -247,7 +251,7 @@ def scenario(mass_ev, contrast, freq_ghz, distance_gpc, spacing_pc, kink=False, 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    ap.add_argument("--mass-ev", type=float, default=1e-14, help="photon mass in one domain [eV]")
+    ap.add_argument("--mass-ev", type=float, default=3e-15, help="photon mass in one domain [eV]")
     ap.add_argument("--contrast", type=float, default=1.0,
                     help="fractional mass change between domains: m_b = m_a (1 + contrast)")
     ap.add_argument("--kink", action="store_true", help="kink walls: the mass changes sign instead")
@@ -274,6 +278,11 @@ def main(argv=None):
     print(f"  frequency          {a.freq_ghz:g} GHz   (wavelength {res['wavelength_m']:.3g} m)")
     print(f"  m c^2 / hbar omega {abs(ra):.3e}, {abs(rb):.3e}")
     print(f"  path length        {a.distance_gpc:g} Gpc")
+    m_b = a.mass_ev * (1.0 if a.kink else 1.0 + a.contrast)
+    rms = np.sqrt(0.5 * (a.mass_ev ** 2 + m_b ** 2))
+    print(f"  rms mass on path   {rms:.3g} eV   (FRB dispersion limit: {FRB_MASS_LIMIT_EV:g} eV at 95%)")
+    if rms > FRB_MASS_LIMIT_EV:
+        print("  NOTE: this scenario is already excluded by fast radio burst dispersion.")
     print()
     print("Mean loss per wall (unpolarised light, angle-averaged)")
     print(f"  conversion to longitudinal   {pw['conversion']:.3e}")

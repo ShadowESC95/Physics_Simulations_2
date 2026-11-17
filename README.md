@@ -16,7 +16,7 @@ Python 3.9 or newer.
 ```
 cd xichi_minimal
 python3 -m pip install -r requirements.txt
-python3 -m pytest -q          # 59 tests, about 2.5 min
+python3 -m pytest -q          # 65 tests, about 3 min
 python3 frb_limit.py          # photon-mass limit from the FRB table
 
 cd ../2026
@@ -30,7 +30,7 @@ python3 proca_wall_app.py     # needs tkinter
 
 - A photon crossing the scalar-field kink sees a Poeschl-Teller potential; the
   simulated transmission matches the closed-form result.
-- Fast radio burst dispersion gives m_gamma < about 8e-15 eV (95%) and no
+- Fast radio burst dispersion gives m_gamma < about 9e-15 eV (95%) and no
   evidence for a non-zero mass. Laboratory limits are far stronger.
 - A thick wall converts a fraction of about tan^2(theta) (dm/omega)^2 of
   transverse photons to longitudinal ones. For a 1e-14 eV mass change at 1 GHz

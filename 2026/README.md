@@ -40,7 +40,7 @@ app's save dialogs).
 
 ```
 python3 proca_wall_app.py                 # interactive solver
-python3 wall_network_estimate.py          # default scenario: 1e-14 eV, 1 GHz, 1 Gpc
+python3 wall_network_estimate.py          # default scenario: 3e-15 eV, 1 GHz, 1 Gpc
 python3 wall_network_estimate.py --help   # all options
 python3 -m pytest -q                      # tests (or run each test file directly)
 ```
@@ -52,6 +52,12 @@ scalar equations, `E_x'' + q^2 E_x = 0` and `m^2 (Pi'/m^2)' + q^2 Pi = 0` with
 `Pi = m^2 A_z`. Transverse and longitudinal photons are mixtures of these two
 channels with mixing angle `tan(alpha) = k m / (omega q)`. A thick wall converts
 a fraction `sin^2(alpha_R - alpha_L) ~ tan^2(theta) (dm/omega)^2`, independent of
-its thickness. Averaged over random wall orientations this is about `1e-16` per
-wall for a `1e-14 eV` mass change at 1 GHz, so a fractional loss of `1e-7` over
-1 Gpc needs roughly one wall per parsec.
+its thickness. Averaged over random wall orientations this is about `1e-17` per
+wall for a `3e-15 eV` mass change at 1 GHz, so a fractional loss of `1e-7` over
+1 Gpc needs roughly ten walls per parsec.
+
+The default masses (3e-15 and 6e-15 eV in alternating domains) are chosen to
+lie inside the limit from fast radio burst dispersion, about 9e-15 eV at 95%
+(`../xichi_minimal/frb_likelihood.py`). The script prints the rms mass along
+the path and says so when a chosen scenario is already excluded; the earlier
+default of 1e-14 eV was.

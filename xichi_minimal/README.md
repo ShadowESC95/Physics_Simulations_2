@@ -11,7 +11,8 @@ python3 scattering.py     # wall transmission: numerical against exact
 python3 frb_limit.py      # photon-mass limit from 101 localized FRBs
 python3 frb_likelihood.py # the same with skewed distributions, about 5 min
 python3 frb_likelihood.py --sample   # plus the sampled limit, about 15 min more
-python3 -m pytest -q      # 59 tests, about 2.5 min
+python3 frb_published.py  # repeat of a published nine-burst analysis
+python3 -m pytest -q      # 65 tests, about 3 min
 ```
 
 ## What this model is
@@ -89,53 +90,82 @@ them above z = 0.01 in the fits:
 | --- | --- |
 | Conservative, per burst (all extragalactic dispersion given to the photon) | 1.8e-14 eV |
 | Joint fit, Gaussian scatter (`frb_limit.py`) | 1.8e-14 eV |
-| Joint fit, skewed distributions, profile likelihood (`frb_likelihood.py`) | 7.6e-15 eV |
-| Joint fit, skewed distributions, sampled over the nuisance parameters | **8.3e-15 eV** (68%: 5.2e-15 eV) |
+| Joint fit, skewed distributions, profile likelihood (`frb_likelihood.py`) | 7.7e-15 eV |
+| Joint fit, skewed distributions, sampled over the nuisance parameters | **9.0e-15 eV** (68%: 5.6e-15 eV) |
 
 No fit shows evidence for a non-zero mass: the best-fit mass is zero and the
 likelihood does not improve when a mass is allowed.
 
-The skewed fit uses the distributions of FRB cosmology (Macquart et al. 2020):
-the intergalactic dispersion follows a long-tailed law whose width shrinks
-with redshift, and the host dispersion is log-normal. Both are bounded below,
-and a photon mass can only add dispersion, so the lower edges are what
-constrain it. A Gaussian has no edge, which is why that fit is weaker.
+The skewed fit has four ingredients.
 
-The Milky Way subtraction has an error set for each sightline,
-sigma^2 = (15)^2 + (0.2 DM_disc)^2 pc cm^-3: 15 for the halo and 20% of the
-NE2001 disc value. It ranges from 16 at high Galactic latitude to 80 through
-the plane (median 18).
-
-The sampled limit integrates over the four nuisance parameters with flat
-priors (six Metropolis chains of 5000 steps; they agree to 4% and the
-Gelman-Rubin statistic is 1.003 or better). The posterior gives F = 0.33 +-
-0.09, median host dispersion 91 pc cm^-3, log-normal width 1.12 +- 0.16 and
-f_IGM = 0.91 +- 0.07.
+- **Distributions of FRB cosmology** (Macquart et al. 2020): the intergalactic
+  dispersion follows a long-tailed law whose width shrinks with redshift, and
+  the host dispersion is log-normal. Both are bounded below, and a photon mass
+  can only add dispersion, so the lower edges are what constrain it. A
+  Gaussian has no edge, which is why that fit is weaker.
+- **A Milky Way error for each sightline**,
+  sigma^2 = (15)^2 + (0.2 DM_disc)^2 pc cm^-3: 15 for the halo and 20% of the
+  NE2001 disc value. It ranges from 16 at high Galactic latitude to 80
+  through the plane (median 18).
+- **A chance that the host is wrong.** With probability e the burst is not at
+  the tabulated redshift, and its dispersion is then compared with the model
+  at the redshifts of the other bursts. e is 1 minus the published host
+  probability for the seven bursts that were checked, and 5% for the rest.
+- **Sampling.** The quoted limit integrates over the four nuisance parameters
+  with flat priors (six Metropolis chains of 5000 steps; Gelman-Rubin
+  statistic 1.006 or better; the chains' own limits span 8.2e-15 to
+  9.2e-15 eV). The posterior gives F = 0.29 +- 0.10, median host dispersion
+  85 pc cm^-3, log-normal width 1.13 +- 0.17 and f_IGM = 0.91 +- 0.07.
 
 How much the profile limit moves with the assumptions:
 
 | Change | 95% limit |
 | --- | --- |
-| Baseline | 7.6e-15 eV |
-| Milky Way halo 30 / 80 pc cm^-3 instead of 50 | 9.4e-15 / 5.1e-15 eV |
-| Halo error 10 / 25 pc cm^-3 instead of 15 | 6.8e-15 / 9.4e-15 eV |
-| Disc error 10% / 40% instead of 20% | 6.7e-15 / 9.8e-15 eV |
-| One error of 30 pc cm^-3 for every sightline | 9.5e-15 eV |
-| f_IGM fixed at 0.84 | 9.3e-15 eV |
-| F fixed at 0.32 | 6.8e-15 eV |
-| Only bursts above z = 0.05 (88 bursts) | 7.4e-15 eV |
-| Only bursts whose disc term is under 40% of their dispersion (90 bursts) | 7.3e-15 eV |
+| Baseline | 7.7e-15 eV |
+| Wrong-host probability 0 / 10% / 20% instead of 5% | 7.6e-15 / 6.8e-15 / 6.8e-15 eV |
+| Milky Way halo 30 / 80 pc cm^-3 instead of 50 | 9.2e-15 / 5.6e-15 eV |
+| Halo error 10 / 25 pc cm^-3 instead of 15 | 7.0e-15 / 9.1e-15 eV |
+| Disc error 10% / 40% instead of 20% | 6.8e-15 / 9.6e-15 eV |
+| One error of 30 pc cm^-3 for every sightline | 9.1e-15 eV |
+| f_IGM fixed at 0.84 | 9.8e-15 eV |
+| F fixed at 0.32 | 7.3e-15 eV |
+| Only bursts above z = 0.05 (88 bursts) | 7.3e-15 eV |
+| Only bursts whose disc term is under 40% of their dispersion (90 bursts) | 7.4e-15 eV |
 | Without FRB 20240209A and FRB 20231201A | 1.0e-14 eV |
 | Without the three most constraining bursts | 1.2e-14 eV |
 
-So the data constrain the product g v < about 8e-15 eV, and between 5e-15
-and 1.2e-14 eV under the variations above. A mass of 2e-14 eV is excluded
-(delta of -2 ln L = 570), and so is 1e-14 eV, the default of
-`../2026/wall_network_estimate.py` (delta = 5.9). Injection tests confirm that
-both fits detect a mass added to the real bursts.
+A larger wrong-host probability tightens the limit slightly: bursts with very
+high dispersion are then explained as wrong hosts, and the host distribution
+no longer has to stretch to cover them.
 
-The bursts that carry the limit were checked against their source papers;
-see `data/README.md`.
+So the data constrain the product g v < about 9e-15 eV, and between 6e-15
+and 1.2e-14 eV under the variations above. Masses of 1e-14 eV and above are
+excluded. Injection tests confirm that both fits detect a mass added to the
+real bursts. The bursts that carry the limit were checked against their
+source papers; see `data/README.md`.
+
+### Comparison with a published limit
+
+Wei & Wu (arXiv:2006.09680) report 4.0e-15 eV (68%) and 7.3e-15 eV (95%) from
+nine bursts. `frb_published.py` repeats their analysis as the paper describes
+it: a Gaussian likelihood with three free parameters (mass, host dispersion,
+and an intrinsic scatter), using the values of their table.
+
+| Analysis | 68% | 95% |
+| --- | --- | --- |
+| Published | 4.0e-15 | 7.3e-15 |
+| Their method, their nine bursts, repeated here | 4.7e-15 | 8.5e-15 |
+| Their method, all 98 bursts of this table | 5.4e-15 | 9.5e-15 |
+| Skewed fit, their nine bursts | 7.2e-15 | 1.2e-14 |
+| Skewed fit, all 98 bursts | 5.6e-15 | 9.0e-15 |
+
+Three things follow. The published numbers are reproduced to within 20%; the
+paper does not state its priors, which is enough to account for the rest.
+Their method gains nothing from eleven times as many bursts, because the
+fitted scatter grows with the sample. And on the same nine bursts the skewed
+fit is weaker by a factor of about 1.5, so part of the published tightness
+comes from the Gaussian assumption; with 98 bursts the skewed fit reaches the
+same level without it.
 
 ## Limits of what is shown
 
@@ -146,20 +176,16 @@ see `data/README.md`.
   large host dispersion. The skewed fit has no such rescaling; its long tails
   absorb those bursts.
 - The Milky Way halo value and the sizes of the two Milky Way errors are
-  assumed, not fitted. They move the limit between 5e-15 and 1e-14 eV, more
+  assumed, not fitted. They move the limit between 6e-15 and 1e-14 eV, more
   than the statistical precision.
 - The limit rests on a few bursts with low dispersion for their redshift.
-  Two of them, FRB 20240209A and FRB 20231201A, supply about two thirds of
-  the constraint; without them the limit is 1.0e-14 eV.
-- Redshift is taken as exact. A wrong host would put a burst at the wrong
-  redshift, and that is not modelled; the sample is not cut on host
-  association probability.
-- Published FRB analyses quote limits between 1.8e-14 and 2.9e-14 eV for
-  single bursts, which this code matches, and 4.0e-15 eV (68%) from nine
-  bursts (Wei & Wu, arXiv:2006.09680). The comparable number here is
-  5.2e-15 eV (68%), close to it but not below it despite ten times as many
-  bursts; this analysis lets the Milky Way error and the host distribution
-  take more of the dispersion.
+  Two of them, FRB 20240209A and FRB 20231201A, supply over half of the
+  constraint; without them the limit is 1.0e-14 eV.
+- The wrong-host term is a simple one: a single probability per burst, and
+  the alternative redshift drawn from the sample itself. It is not a full
+  treatment of each burst's candidate hosts.
+- The six chains' limits differ by up to 12%, so the sampled limit is known
+  to about that precision.
 - Laboratory and solar-system limits on a constant photon mass are far
   stronger than any FRB limit (the Particle Data Group lists about 1e-18 eV).
   They are not re-derived here.

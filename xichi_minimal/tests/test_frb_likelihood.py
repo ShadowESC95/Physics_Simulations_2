@@ -88,11 +88,13 @@ def test_density_is_normalised_and_grid_converged(fit):
         assert fit.nll(m, *PARS) == pytest.approx(fine.nll(m, *PARS), abs=0.05)
 
 
-def test_photon_mass_only_removes_dispersion(fit):
-    """A mass m acts exactly like observing every burst with DM_gamma less."""
-    m = 8e-15
+def test_photon_mass_only_removes_dispersion():
+    """A mass m acts exactly like observing every burst with DM_gamma less
+    (with the hosts taken as certain, so each burst has one redshift)."""
+    m, cfg = 8e-15, lk.SkewConfig(wrong_host=0.0)
     lowered = [(n, dm - fl.dm_gamma(z, m), ism, z) for n, dm, ism, z in fl.load()]
-    assert fit.nll(m, *PARS) == pytest.approx(lk.SkewFit(rows=lowered).nll(0.0, *PARS), rel=1e-9)
+    assert lk.SkewFit(config=cfg).nll(m, *PARS) == pytest.approx(
+        lk.SkewFit(rows=lowered, config=cfg).nll(0.0, *PARS), rel=1e-9)
 
 
 def test_no_evidence_for_a_mass_and_the_limit_is_near_1e_minus_14(fit):
@@ -150,3 +152,22 @@ def test_sampler_gives_a_limit_consistent_with_the_profile(fit):
     assert post[0] > post[-1] * 1e3                      # mass zero favoured, 3e-14 excluded
     assert 3e-15 < out["limit68"] < out["limit95"] < 1.5e-14
     assert 0.05 < out["acceptance"] < 0.8
+
+
+def test_wrong_host_term_is_a_mixture(fit):
+    pure = lk.SkewFit(config=lk.SkewConfig(wrong_host=0.0))
+    assert not pure.eps.any()
+    assert fit.eps[fit.frbs.index("FRB20231201A")] == pytest.approx(1 - 0.911)
+    assert fit.eps[fit.frbs.index("FRB20121102A")] == fit.cfg.wrong_host
+    a, b = pure.burst_likelihoods(6e-15, *PARS), fit.burst_likelihoods(6e-15, *PARS)
+    assert np.all(b >= (1 - fit.eps) * a * (1 - 1e-12))
+
+
+def test_wrong_host_term_limits_what_one_burst_can_do():
+    """Give one burst a DM far too low for its redshift. Without the wrong-host
+    term it is nearly impossible; with it, the penalty is bounded."""
+    rows = [(n, dm - 400.0 if n == "FRB20190523A" else dm, ism, z) for n, dm, ism, z in fl.load()]
+    cost = lambda f: f.nll(0.0, *PARS) - type(f)(config=f.cfg).nll(0.0, *PARS)
+    pure = cost(lk.SkewFit(rows=rows, config=lk.SkewConfig(wrong_host=0.0)))
+    mixed = cost(lk.SkewFit(rows=rows))
+    assert pure > 25 and mixed < 12

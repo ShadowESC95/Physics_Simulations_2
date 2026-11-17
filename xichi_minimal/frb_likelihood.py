@@ -26,6 +26,17 @@ Budget for one burst
   latitude. Without e a burst whose dispersion is below the Milky Way model
   (FRB 20220319D) would have zero likelihood.
 
+* The host may be the wrong galaxy. With probability e_i the burst's redshift
+  is not the one in the table, and its dispersion is then drawn from the
+  model at the redshift of a random burst of the sample:
+
+      L_i = (1 - e_i) L(DM_i | z_i) + e_i * mean_j L(DM_i | z_j).
+
+  e_i is 1 minus the published host-association probability where one was
+  looked up (HOST_PROBABILITY), and `wrong_host` otherwise. This stops a
+  single low-dispersion burst from carrying the limit on its own. The
+  wrong-host term uses the Milky Way error of sightline j, an approximation.
+
 The likelihood of a burst is the convolution of the three random terms. It is
 computed on a uniform DM grid: each term is turned into exact cell
 probabilities (from its cumulative distribution), the three are convolved by
@@ -51,6 +62,16 @@ from scipy.optimize import brentq, minimize
 from scipy.special import erf
 
 import frb_limit as fl
+
+# Published probability that the listed galaxy is the host (PATH posterior),
+# for the bursts checked against their papers; see data/README.md.
+# FRB 20220610A: 0.87 + 0.11 for two members of the same galaxy group, so the
+# redshift is the group's either way.
+HOST_PROBABILITY = {
+    "FRB20240209A": 0.99, "FRB20231201A": 0.911, "FRB20221029A": 0.92,
+    "FRB20220610A": 0.98, "FRB20210807D": 1.0, "FRB20190611B": 0.98,
+    "FRB20220319D": 0.99,
+}
 
 ALPHA = 3.0   # p(Delta) uses alpha = beta = 3 throughout (Macquart et al. 2020)
 FLOOR = 1e-14  # smallest density kept (per pc cm^-3): below it the FFT is round-off
@@ -119,6 +140,7 @@ class SkewConfig:
     sigma_halo: float = 15.0     # error of the halo value (assumed; covers 20-80)
     disc_fraction: float = 0.2   # fractional error of the NE2001 disc DM (assumed)
     sigma_mw: float | None = None    # if set: one error for every sightline instead
+    wrong_host: float = 0.05     # probability of a wrong host where none was looked up (assumed)
     f_range: tuple = (0.011, 0.5)        # F: prior range of Macquart et al.
     mu_range: tuple = (np.log(20.0), np.log(300.0))   # median host DM 20-300
     sigma_host_range: tuple = (0.2, 2.0)
@@ -142,6 +164,8 @@ class SkewFit:
         self.frbs = [r[0] for r in rows]
         self.z = np.array([r[3] for r in rows])
         self.excess = np.array([r[1] - r[2] for r in rows]) - cfg.dm_halo
+        self.eps = np.array([1.0 - HOST_PROBABILITY[n] if n in HOST_PROBABILITY and cfg.wrong_host > 0
+                             else cfg.wrong_host for n in self.frbs])
         disc = np.array([r[2] for r in rows])
         self.sigma_mw = (np.full(len(rows), float(cfg.sigma_mw)) if cfg.sigma_mw is not None
                          else np.sqrt(cfg.sigma_halo**2 + (cfg.disc_fraction * disc) ** 2))
@@ -210,13 +234,28 @@ class SkewFit:
         pmf = np.concatenate([pmf[:, n - self._neg:], pmf[:, :self._m]], axis=1)
         return np.maximum(pmf / self.cfg.step, FLOOR)
 
+    def likelihood_grid(self, masses, F, mu, sigma_host, f_igm):
+        """Likelihood of each burst at each mass: array (bursts, masses).
+
+        The mass only shifts the DM at which the density is read, so one
+        density evaluation serves every mass.
+        """
+        ln_d = np.log(self.extragalactic_density(F, mu, sigma_host, f_igm))
+        shift = np.atleast_1d(np.asarray(masses, float)) ** 2
+        # interpolate ln(density): it is close to quadratic in the tails
+        x = self.excess[:, None] - shift[None, :] * self.gamma_unit[:, None]
+        like = np.exp([np.interp(x[i], self._axis, ln_d[i]) for i in range(len(x))])
+        if np.any(self.eps > 0):
+            wrong = np.zeros_like(like)
+            for j in range(len(ln_d)):                 # the burst placed at redshift z_j
+                xj = self.excess[:, None] - shift[None, :] * self.gamma_unit[j]
+                wrong += np.exp(np.interp(xj, self._axis, ln_d[j]))
+            like = (1.0 - self.eps)[:, None] * like + self.eps[:, None] * wrong / len(ln_d)
+        return like
+
     def burst_likelihoods(self, m_ev, F, mu, sigma_host, f_igm):
         """Probability density of each burst's observed excess DM (per pc cm^-3)."""
-        dens = self.extragalactic_density(F, mu, sigma_host, f_igm)
-        x = self.excess - m_ev**2 * self.gamma_unit
-        # interpolate ln(density): it is close to quadratic in the tails
-        ln_d = np.log(dens)
-        return np.exp([np.interp(x[i], self._axis, ln_d[i]) for i in range(len(x))])
+        return self.likelihood_grid(m_ev, F, mu, sigma_host, f_igm)[:, 0]
 
     def nll(self, m_ev, F, mu, sigma_host, f_igm):
         """-2 ln L, the analogue of chi-square."""
@@ -294,14 +333,8 @@ class SkewFit:
 # Marginalised limit: sample the nuisance parameters
 # --------------------------------------------------------------------------
 def _mass_loglike(fit, theta, masses):
-    """ln L at every mass in `masses` for one set of nuisance parameters.
-
-    The mass only shifts the DM at which the density is read, so one density
-    evaluation serves the whole mass grid.
-    """
-    ln_d = np.log(fit.extragalactic_density(*theta))
-    x = fit.excess[:, None] - masses[None, :] ** 2 * fit.gamma_unit[:, None]
-    return np.sum([np.interp(x[i], fit._axis, ln_d[i]) for i in range(len(x))], axis=0)
+    """ln L at every mass in `masses` for one set of nuisance parameters."""
+    return np.sum(np.log(fit.likelihood_grid(masses, *theta)), axis=0)
 
 
 def _chain(args):

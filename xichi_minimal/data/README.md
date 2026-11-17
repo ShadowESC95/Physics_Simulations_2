@@ -30,6 +30,6 @@ spectroscopic.
 | FRB 20220610A | arXiv:2210.04680, 2311.10815 | Values agree. The host is a compact group of galaxies; the group redshift is secure. The dispersion is about 650 pc cm^-3 above the mean for its redshift. |
 | FRB 20210807D | arXiv:2408.02083, 2208.00819 | The papers give DM 251.9, the table 251.3. Host probability 1.00. The Milky Way term is about half the total. Using 251.9 leaves the limit unchanged. |
 | FRB 20190611B | arXiv:2005.13162, 2005.13161 | DM is 332.63 in one paper (as here) and 321.4 to 322.2 in two others. The host association has been questioned in print. Using 322.2 or dropping the burst moves the limit by under 5%. |
-| FRB 20220319D | arXiv:2301.01000 | The paper quotes a Milky Way disc value of 132.9, the table 126.77. Both exceed the observed DM of 110.95, so the excess is negative. Dropping the burst changes the limit from 7.6e-15 to 7.2e-15 eV. |
+| FRB 20220319D | arXiv:2301.01000 | The paper quotes a Milky Way disc value of 132.9, the table 126.77. Both exceed the observed DM of 110.95, so the excess is negative. Dropping the burst changes the limit from 7.7e-15 to 7.2e-15 eV. |
 
 The table is left as downloaded; none of these values was edited.
