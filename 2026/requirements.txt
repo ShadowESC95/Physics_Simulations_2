@@ -1,0 +1,7 @@
+# For proca_wall_solver.py, proca_wall_app.py, wall_network_estimate.py and their tests
+numpy>=1.22
+scipy>=1.8
+matplotlib>=3.5
+# proca_wall_app.py also needs tkinter, which ships with Python on Windows/macOS;
+# on Debian/Ubuntu install it with:  sudo apt install python3-tk
+# optional, to run the tests:  pytest
