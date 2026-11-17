@@ -9,7 +9,8 @@ python3 -m pip install -r requirements.txt
 python3 model.py          # Lagrangian, equations of motion, unit check
 python3 scattering.py     # wall transmission: numerical against exact
 python3 frb_limit.py      # photon-mass limit from 101 localized FRBs
-python3 -m pytest -q      # 42 tests, about 20 s
+python3 frb_likelihood.py # the same with skewed distributions, about 4 min
+python3 -m pytest -q      # 56 tests, about 90 s
 ```
 
 ## What this model is
@@ -77,35 +78,71 @@ Poeschl-Teller potential, whose transmission is known in closed form:
 - Prediction checked: photons can be trapped on the wall, at the frequencies
   given by the Poeschl-Teller levels.
 
-**5. Real data** (`frb_limit.py`, `tests/test_frb.py`). A photon mass delays
-low radio frequencies like extra dispersion, with a different redshift
-dependence from intergalactic electrons. Using 101 localized fast radio
-bursts (see `data/README.md`):
+**5. Real data** (`frb_limit.py`, `frb_likelihood.py`, `tests/test_frb.py`,
+`tests/test_frb_likelihood.py`). A photon mass delays low radio frequencies
+like extra dispersion, with a different redshift dependence from intergalactic
+electrons. Using 101 localized fast radio bursts (see `data/README.md`), 98 of
+them above z = 0.01 in the fits:
 
-| Analysis | Result |
+| Analysis | 95% upper limit on m_gamma |
 | --- | --- |
-| Conservative, per burst (all extragalactic dispersion given to the photon) | m_gamma < 1.8e-14 eV |
-| Joint fit, baryon fraction free | m_gamma < 1.8e-14 eV (95%) |
-| Joint fit, baryon fraction fixed at 0.84 | m_gamma < 1.2e-14 eV (95%) |
-| Evidence for a non-zero mass | None: chi-square improves by 0.00 |
+| Conservative, per burst (all extragalactic dispersion given to the photon) | 1.8e-14 eV |
+| Joint fit, Gaussian scatter (`frb_limit.py`) | 1.8e-14 eV |
+| Joint fit, skewed distributions (`frb_likelihood.py`) | **9.5e-15 eV** |
 
-So the data constrain the product g v < about 2e-14 eV and show no sign of a
-photon mass. A mass of 3e-14 eV is excluded (delta chi2 = 230); 1e-14 eV, the
-default of `../2026/wall_network_estimate.py`, is not excluded by this
-analysis. An injection test confirms the fit would detect a 5e-14 eV mass.
+No fit shows evidence for a non-zero mass: the best-fit mass is zero and the
+likelihood does not improve when a mass is allowed.
+
+The skewed fit uses the distributions of FRB cosmology (Macquart et al. 2020):
+the intergalactic dispersion follows a long-tailed law whose width shrinks
+with redshift, and the host dispersion is log-normal. Both are bounded below,
+and a photon mass can only add dispersion, so the lower edges are what
+constrain it. A Gaussian has no edge, which is why that fit is weaker. Four
+nuisance parameters are fitted with the mass: F = 0.26, median host
+dispersion 86 pc cm^-3, log-normal width 1.06, and f_IGM = 1.0 (at the edge
+of its range).
+
+How much the skewed limit moves with the assumptions:
+
+| Change | 95% limit |
+| --- | --- |
+| Baseline (halo 50 pc cm^-3, Milky Way error 30 pc cm^-3) | 9.5e-15 eV |
+| Milky Way halo 30 / 80 pc cm^-3 | 1.1e-14 / 7.1e-15 eV |
+| Milky Way error 15 / 50 pc cm^-3 | 6.2e-15 / 1.3e-14 eV |
+| f_IGM fixed at 0.84 | 1.1e-14 eV |
+| F fixed at 0.32 | 9.5e-15 eV |
+| Only bursts above z = 0.05 (88 bursts) | 8.9e-15 eV |
+| Without the three most constraining bursts | 1.3e-14 eV |
+| Prior flat in the mass instead of the profile likelihood | 9.9e-15 eV (68%: 5.5e-15 eV) |
+
+So the data constrain the product g v < about 1e-14 eV, to within a factor of
+about 1.5 either way set by how well the Milky Way contribution is known. A
+mass of 2e-14 eV is excluded (delta of -2 ln L = 299). The value 1e-14 eV,
+the default of `../2026/wall_network_estimate.py`, sits at the edge of the
+95% limit. Injection tests confirm that both fits detect a mass added to the
+real bursts.
 
 ## Limits of what is shown
 
 - Nothing here is evidence *for* the model. Steps 3 and 4 show the code solves
   the stated equations; step 5 is an upper limit.
-- The joint fit uses Gaussian scatter with assumed widths. With those widths
-  chi-square is 205 for 98 bursts, driven by a few bursts with very large host
-  dispersion, so the scatters are enlarged by 1.46 before quoting limits.
-  Read the joint limits to within a factor of about two.
+- The Gaussian fit needs its assumed scatters enlarged by 1.46 to describe
+  the data (chi-square 205 for 98 bursts), because a few bursts have very
+  large host dispersion. The skewed fit has no such rescaling; its long tails
+  absorb those bursts.
+- The skewed limit depends on the Milky Way subtraction: the halo value and
+  the size of its error are assumed, not fitted, and they move the limit
+  between 6e-15 and 1.3e-14 eV. The limit also rests on a handful of bursts
+  with low dispersion for their redshift.
+- The limits use a profile likelihood. The flat-prior number in the table
+  uses the profile in place of a full marginalisation over the nuisance
+  parameters.
 - Published FRB analyses quote limits between 1.8e-14 and 2.9e-14 eV for
   single bursts, which this code matches, and 4.0e-15 eV (68%) from nine
-  bursts (Wei & Wu, arXiv:2006.09680), which it does not reach; that analysis
-  makes stronger assumptions about the intergalactic and host terms.
+  bursts (Wei & Wu, arXiv:2006.09680). The comparable number here is
+  5.5e-15 eV (68%), close to it but not below it despite ten times as many
+  bursts; this analysis lets the Milky Way error and the host distribution
+  take more of the dispersion.
 - Laboratory and solar-system limits on a constant photon mass are far
   stronger than any FRB limit (the Particle Data Group lists about 1e-18 eV).
   They are not re-derived here.
@@ -122,4 +159,6 @@ analysis. An injection test confirms the fit would detect a 5e-14 eV mass.
 - L. Bonetti et al., arXiv:1602.09135 and arXiv:1701.03097 (photon mass from
   FRB dispersion; formulas for H_gamma and H_e).
 - X.-F. Wu et al., arXiv:1602.07835; J.-J. Wei, X.-F. Wu, arXiv:2006.09680.
+- J.-P. Macquart et al., Nature 581, 391 (2020), arXiv:2005.13161
+  (distributions of the intergalactic and host dispersion).
 - FRB data: <https://github.com/FRBs/FRB>.

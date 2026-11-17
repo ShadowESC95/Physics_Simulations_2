@@ -32,7 +32,8 @@ Two analyses
 The Gaussian scatter model in (2) is crude: the true distributions are skewed
 and the scatter values are assumptions, listed in `FitConfig`. The result
 should be read to within a factor of about two. Analysis (1) has no such
-assumptions.
+assumptions. frb_likelihood.py repeats the joint fit with the skewed
+distributions used in FRB cosmology and gives a limit about twice as tight.
 """
 from __future__ import annotations
 
